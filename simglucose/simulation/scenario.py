@@ -39,7 +39,7 @@ class CustomScenario(Scenario):
             if t in times2compare:
                 idx = times2compare.index(t)
                 return Action(meal=actions[idx])
-            return Action(meal=0)
+            return Action(meal=0)   
 
     def reset(self):
         pass

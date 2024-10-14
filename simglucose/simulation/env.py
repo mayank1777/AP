@@ -71,7 +71,8 @@ class T1DSimEnv(object):
         insulin = 0.0
         BG = 0.0
         CGM = 0.0
-
+        # CHO consumption is a doubt
+        #  temp 
         for _ in range(int(self.sample_time)):
             # Compute moving average as the sample measurements
             tmp_CHO, tmp_insulin, tmp_BG, tmp_CGM = self.mini_step(action)

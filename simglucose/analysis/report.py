@@ -85,6 +85,8 @@ def percent_stats(BG, ax=None):
     p_50 = (BG < 50).sum() / len(BG) * 100
     p_50.name = 'BG<50'
     p_stats = pd.concat([p_normal, p_hyper, p_hypo, p_250, p_50], axis=1)
+    # print(BG)
+    # print("stats")
     p_stats.plot(ax=ax, kind='bar')
     ax.set_ylabel('Percent of time in Range (%)')
     fig.tight_layout()
@@ -95,7 +97,6 @@ def percent_stats(BG, ax=None):
 def risk_index_trace(df_BG, sample_time=3, window_length=60, visualize=False):
     step_size = int(window_length / sample_time)  # window size set to 1 hour for calculating Risk Index
     chunk_BG = [df_BG.iloc[i:i + step_size, :] for i in range(0, len(df_BG), step_size)]
-
     if len(chunk_BG[-1]) != step_size:  # Remove the last chunk which is not full
         chunk_BG.pop()
 
@@ -110,10 +111,14 @@ def risk_index_trace(df_BG, sample_time=3, window_length=60, visualize=False):
     HBGI = pd.concat(rh, axis=1).transpose()
     RI = LBGI + HBGI
 
+
+
     ri_per_hour = pd.concat(
         [LBGI.transpose(), HBGI.transpose(),
          RI.transpose()],
         keys=['LBGI', 'HBGI', 'Risk Index'])
+    
+    
 
     axes = []
     if visualize:
@@ -130,6 +135,10 @@ def risk_index_trace(df_BG, sample_time=3, window_length=60, visualize=False):
             plt.ylabel('Risk Index')
 
     ri_mean = ri_per_hour.transpose().mean().unstack(level=0)
+    # print(ri_per_hour)
+    # print(type(ri_mean))
+    # print(ri_mean.shape)
+    # print(ri_mean)
     fig, ax = plt.subplots(1)
     ri_mean.plot(ax=ax, kind='bar')
     fig.tight_layout()
@@ -202,6 +211,7 @@ def CVGA_background(ax=None):
 
 def CVGA_analysis(BG):
     BG_min = np.percentile(BG, 2.5, axis=0)
+    print(BG_min)
     BG_max = np.percentile(BG, 97.5, axis=0)
     BG_min[BG_min < 50] = 50
     BG_min[BG_min > 400] = 400
@@ -229,9 +239,13 @@ def CVGA(BG_list, label=None):
         label = [label]
     if label is None:
         label = ['BG%d' % (i + 1) for i in range(len(BG_list))]
+    print(BG_list)
+    print(label)
     fig, ax = CVGA_background()
     zone_stats = []
+    cnt = 0
     for (BG, l) in zip(BG_list, label):
+        cnt+=1
         BGmin, BGmax, A, B, C, D, E = CVGA_analysis(BG)
         ax.scatter(
             BGmin,
@@ -241,6 +255,7 @@ def CVGA(BG_list, label=None):
             label='%s (A: %d%%, B: %d%%, C: %d%%, D: %d%%, E: %d%%)' %
                   (l, 100 * A, 100 * B, 100 * C, 100 * D, 100 * E))
         zone_stats.append((A, B, C, D, E))
+    print(cnt)
 
     zone_stats = pd.DataFrame(zone_stats, columns=['A', 'B', 'C', 'D', 'E'])
     #     ax.legend(bbox_to_anchor=(1, 1.10), borderaxespad=0.5)
@@ -251,12 +266,13 @@ def CVGA(BG_list, label=None):
 def report(df, cgm_sensor=None, save_path=None):
     BG = df.unstack(level=0).BG
 
+    # print(BG)
     fig_ensemble, ax1, ax2, ax3 = ensemblePlot(df)
     pstats, fig_percent, ax4 = percent_stats(BG)
     if cgm_sensor is not None:
         ri_per_hour, ri_mean, fig_ri, ax5 = risk_index_trace(BG, sample_time=cgm_sensor.sample_time, visualize=False)
     else:
-        ri_per_hour, ri_mean, fig_ri, ax5 = risk_index_trace(BG, visualize=False)
+        ri_per_hour, ri_mean, fig_ri, ax5 = risk_index_trace(BG,visualize=False)
     zone_stats, fig_cvga, ax6 = CVGA(BG, label='')
     axes = [ax1, ax2, ax3, ax4, ax5, ax6]
     figs = [fig_ensemble, fig_percent, fig_ri, fig_cvga]
@@ -305,5 +321,5 @@ if __name__ == '__main__':
     # report(df_BG, df_CGM)
     results, ri_per_hour, zone_stats, axes = report(df)
     # print results
-    # # print ri_per_hour
+    # print(ri_per_hour)
     # print zone_stats
