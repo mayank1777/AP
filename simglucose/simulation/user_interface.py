@@ -1,6 +1,7 @@
 from simglucose.simulation.sim_engine import SimObj, batch_sim
 from simglucose.simulation.env import T1DSimEnv
 from simglucose.controller.basal_bolus_ctrller import BBController
+from simglucose.controller.rlpid_ctrller import RLPIDController
 from simglucose.sensor.cgm import CGMSensor
 from simglucose.actuator.pump import InsulinPump
 from simglucose.patient.t1dpatient import T1DPatient
@@ -252,19 +253,25 @@ def pick_controller():
     while True:
         print("Select controller:")
         print("[1] Basal-Bolus Controller")
+        print("[2] RL-PID Controller")
         input_value = input(">>>")
         try:
             selection = int(input_value)
         except ValueError:
             print("Please input an integer!")
             continue
-        if selection < 1 or selection > 1:
+        if selection < 1 or selection > 2:
             print("Please input a number from the list!")
         else:
             break
+
     if selection == 1:
         controller = BBController()
+    elif selection == 2:
+        # Assuming you have a PIDController class implemented
+        controller = RLPIDController()
     return controller
+
 
 
 def pick_save_path(use_default=False):

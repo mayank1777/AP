@@ -1,6 +1,10 @@
 import logging
 import time
 import os
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from simglucose.controller.rlpid_ctrller import RLPIDController
 
 pathos = True
 try:
@@ -27,14 +31,20 @@ class SimObj(object):
         self.path = path
 
     def simulate(self):
-        self.controller.reset()
         obs, reward, done, info = self.env.reset()
+        if isinstance(self.controller, RLPIDController):
+            self.controller.reset(obs , **info)
         tic = time.time()
         while self.env.time < self.env.scenario.start_time + self.sim_time:
             if self.animate:
                 self.env.render()
-            action = self.controller.policy(obs, reward, done, **info)
+            action , kp , ki ,kd = self.controller.policy(obs, reward, done, **info)
             obs, reward, done, info = self.env.step(action)
+            if isinstance(self.controller, RLPIDController):
+                action = torch.tensor([kp, ki, kd], dtype=torch.float32)
+                self.controller.step_and_record(obs , action , reward , done , **info)
+
+            # self.controller
         toc = time.time()
         logger.info('Simulation took {} seconds.'.format(toc - tic))
 
