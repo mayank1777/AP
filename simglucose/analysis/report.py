@@ -5,6 +5,7 @@ import os
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.collections import PatchCollection
+from datetime import timedelta
 # from pandas.plotting import lag_plot
 import logging
 
@@ -210,7 +211,10 @@ def CVGA_background(ax=None):
 
 
 def CVGA_analysis(BG):
+    print("bg")
+    print(BG)
     BG_min = np.percentile(BG, 2.5, axis=0)
+    print("bg min")
     print(BG_min)
     BG_max = np.percentile(BG, 97.5, axis=0)
     BG_min[BG_min < 50] = 50
@@ -261,6 +265,9 @@ def CVGA(BG_list, label=None):
     #     ax.legend(bbox_to_anchor=(1, 1.10), borderaxespad=0.5)
     ax.legend()
     return zone_stats, fig, ax
+
+
+
 
 
 def report(df, cgm_sensor=None, save_path=None):

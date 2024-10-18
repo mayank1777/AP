@@ -90,7 +90,7 @@ class Critic(nn.Module):
 
     def forward(self, state, action):
         state_out = torch.relu(self.fc1_state(state))
-        state_out = torch.relu(self.fc2_state(state))
+        state_out = torch.relu(self.fc2_state(state_out))
 
         action_out = torch.relu(self.fc1_action(action))
 
@@ -206,7 +206,7 @@ class RLPIDController(Controller):
         bg = observation.CGM  # Current observation (e.g., blood glucose level)
         meal = kwargs.get('meal')  # unit: g/min
 
-        reward = (bg - self.target)**2
+        reward = -(bg - self.target)**2
 
         # Construct state representation for the RL agent
         next_state = torch.tensor([bg, meal], dtype=torch.float32).unsqueeze(0)  # Add batch dimension
@@ -234,6 +234,8 @@ class RLPIDController(Controller):
         with torch.no_grad():
             target_actions = self.target_actor(next_state_batch)
             # Ensure no future reward is added for terminal states (done_batch=1 for terminal states)
+            print(f"Next state batch shape: {next_state_batch.shape}")
+            print(f"Target actions shape: {target_actions.shape}")
             target_q = reward_batch + self.gamma * self.target_critic(next_state_batch, target_actions) * (1 - done_batch)
 
         # Update critic
