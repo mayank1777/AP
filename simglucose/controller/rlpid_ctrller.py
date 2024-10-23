@@ -62,13 +62,29 @@ class Buffer:
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
 # Actor Model
+# class Actor(nn.Module):
+#     def __init__(self, statedim, actiondim, upper_bound):
+#         super(Actor, self).__init__()
+#         self.upper_bound = torch.tensor(upper_bound, dtype=torch.float32)
+#         self.fc1 = nn.Linear(statedim, 256)
+#         self.fc2 = nn.Linear(256, 256)
+#         self.fc3 = nn.Linear(256, actiondim)  # Output kp, ki, kd
+#         self.tanh = nn.Tanh()
+
+#     def forward(self, state):
+#         x = torch.relu(self.fc1(state))
+#         x = torch.relu(self.fc2(x))
+#         x = self.tanh(self.fc3(x)) * self.upper_bound
+#         return x
+
 class Actor(nn.Module):
     def __init__(self, statedim, actiondim, upper_bound):
         super(Actor, self).__init__()
         self.upper_bound = torch.tensor(upper_bound, dtype=torch.float32)
-        self.fc1 = nn.Linear(statedim, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, actiondim)  # Output kp, ki, kd
+        # Further reduced the number of neurons
+        self.fc1 = nn.Linear(statedim, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, actiondim)  # Output kp, ki, kd
         self.tanh = nn.Tanh()
 
     def forward(self, state):
@@ -77,16 +93,39 @@ class Actor(nn.Module):
         x = self.tanh(self.fc3(x)) * self.upper_bound
         return x
 
+
 # Critic Model
+# class Critic(nn.Module):
+#     def __init__(self, statedim, actiondim):
+#         super(Critic, self).__init__()
+#         self.fc1_state = nn.Linear(statedim, 16)
+#         self.fc2_state = nn.Linear(16, 32)
+#         self.fc1_action = nn.Linear(actiondim, 32)
+#         self.fc3 = nn.Linear(64, 256)
+#         self.fc4 = nn.Linear(256, 256)
+#         self.fc5 = nn.Linear(256, 1)
+
+#     def forward(self, state, action):
+#         state_out = torch.relu(self.fc1_state(state))
+#         state_out = torch.relu(self.fc2_state(state_out))
+
+#         action_out = torch.relu(self.fc1_action(action))
+
+#         concat = torch.cat([state_out, action_out], dim=1)
+#         x = torch.relu(self.fc3(concat))
+#         x = torch.relu(self.fc4(x))
+#         return self.fc5(x)
+
 class Critic(nn.Module):
     def __init__(self, statedim, actiondim):
         super(Critic, self).__init__()
-        self.fc1_state = nn.Linear(statedim, 16)
-        self.fc2_state = nn.Linear(16, 32)
-        self.fc1_action = nn.Linear(actiondim, 32)
-        self.fc3 = nn.Linear(64, 256)
-        self.fc4 = nn.Linear(256, 256)
-        self.fc5 = nn.Linear(256, 1)
+        # Further reduced the number of neurons
+        self.fc1_state = nn.Linear(statedim, 4)
+        self.fc2_state = nn.Linear(4, 8)
+        self.fc1_action = nn.Linear(actiondim, 8)
+        self.fc3 = nn.Linear(16, 64)
+        self.fc4 = nn.Linear(64, 64)
+        self.fc5 = nn.Linear(64, 1)
 
     def forward(self, state, action):
         state_out = torch.relu(self.fc1_state(state))
@@ -99,8 +138,9 @@ class Critic(nn.Module):
         x = torch.relu(self.fc4(x))
         return self.fc5(x)
 
+
 class RLPIDController(Controller):
-    def __init__(self, kp=1, ki=0, kd=0, target=90, state_dim=2, action_dim=3, buffer_capacity=50000, batch_size=64, gamma=0.99, tau=0.005):
+    def __init__(self, kp=1, ki=0, kd=0, target=90, k=5, action_dim=3, buffer_capacity=50000, batch_size=64, gamma=0.99, tau=0.005):
         """
         Initialize RLPIDController class, which uses DDPG to learn the PID controller gains.
         """
@@ -113,17 +153,19 @@ class RLPIDController(Controller):
         self.lower_bound = torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32)
 
         self.target = target
-        self.state_dim = state_dim
+        self.k = k  # Number of previous values to track
+    
+        self.state_dim = 2 * k  # State now contains k previous values of bg and meal
         self.action_dim = action_dim
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
 
         # Initialize actor and critic models
-        self.actor_model = Actor(state_dim, action_dim, self.upper_bound)
-        self.critic_model = Critic(state_dim, action_dim)
-        self.target_actor = Actor(state_dim, action_dim, self.upper_bound)
-        self.target_critic = Critic(state_dim, action_dim)
+        self.actor_model = Actor(self.state_dim, action_dim, self.upper_bound)
+        self.critic_model = Critic(self.state_dim, action_dim)
+        self.target_actor = Actor(self.state_dim, action_dim, self.upper_bound)
+        self.target_critic = Critic(self.state_dim, action_dim)
 
         # Copy weights from actor/critic to target networks
         self.target_actor.load_state_dict(self.actor_model.state_dict())
@@ -134,7 +176,7 @@ class RLPIDController(Controller):
         self.actor_optimizer = optim.Adam(self.actor_model.parameters(), lr=0.001)
 
         # Replay buffer
-        self.buffer = Buffer(state_dim, action_dim, buffer_capacity, batch_size)
+        self.buffer = Buffer(self.state_dim, action_dim, buffer_capacity, batch_size)
 
         # Exploration noise
         self.std_dev = 0.2
@@ -146,6 +188,8 @@ class RLPIDController(Controller):
 
         # Internal PID states
         self.integrated_state = 0
+        self.bg_history = [0.0] * k  # History of previous k bg values
+        self.meal_history = [0.0] * k  # History of previous k meal values
 
     def policy(self, observation, reward, done, **kwargs):
         """
@@ -155,8 +199,14 @@ class RLPIDController(Controller):
         bg = observation.CGM  # Current observation (e.g., blood glucose level)
         meal = kwargs.get('meal')  # unit: g/min
 
+        # Update the history lists
+        self.bg_history.pop(0)
+        self.bg_history.append(bg)
+        self.meal_history.pop(0)
+        self.meal_history.append(meal)
+
         # Construct state representation for the RL agent
-        state = torch.tensor([bg, meal], dtype=torch.float32).unsqueeze(0)  # Add batch dimension
+        state = torch.tensor(self.bg_history + self.meal_history, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
 
         # Use the actor model to get the deltas for PID gains (Δkp, Δki, Δkd)
         delta_pid_gains = self.actor_model(state).detach()  # Keep as tensor
@@ -176,16 +226,11 @@ class RLPIDController(Controller):
         self.ki += delta_ki
         self.kd += delta_kd
 
-       
         control_input = (self.kp * (bg - self.target) +
                          self.ki * self.integrated_state +
-                         self.kd * (bg - self.prev_state[0,0]) / sample_time)
+                         self.kd * (bg - self.bg_history[-2]) / sample_time)
 
         # Update internal PID states
-        print(f"control_input shape: {control_input.shape}")
-        print(control_input)
-
-        self.prev_state = state
         self.integrated_state += (bg - self.target) * sample_time
 
         # Return the control action (e.g., basal insulin dose)
@@ -196,27 +241,81 @@ class RLPIDController(Controller):
         return Action(basal=basal, bolus=0), delta_kp, delta_ki, delta_kd
 
     
+    def reward_function0(bg):
+        reward = -(bg - self.target)**2
+        return reward
+    
+    def reward_function1(G_t):
+        """ 
+        Gaussian reward function where:
+        G_t: Instantaneous reading from the glucose sensor
+        G_X: Reference value of the glucose concentration
+        a: Width of the desired glucose band for normoglycemia
+        """
+        G_X = self.target
+        a = 40
+        reward = -1 + math.exp(-((G_t - G_X) ** 2) / (2 * a ** 2))
+        return reward
+    
+    def reward_function2(bgl, soft_limit_lower=80, hard_limit_lower=60, soft_limit_higher=140, hard_limit_higher=180, target=100):
+        """
+        Reward function with two limits: soft limit range and hard limit range.
+        The soft limit range comes under the hard limit range.
+        If the BGL is under the soft limit range, penalize as -(bgl - target)**2.
+        Else, if out of the soft range but within hard limit, penalize as -1000 * (bgl - target)**2.
+        """
+        if soft_limit_lower <= bgl <= soft_limit_higher:
+            return -(bgl - target) ** 2
+        elif hard_limit_lower <= bgl <= hard_limit_higher:
+            return -100 * (bgl - target) ** 2
+        else:
+            return -1000 * (bgl - target) ** 2  # Hard penalty if outside the hard limit
+
+    def reward_function3(bgl, G_ref=100, G_H=180, G_L=70, a_h=1.5, a_l=2.0):
+        """
+        Reward function based on hyperglycemia and hypoglycemia bounds.
+        R(t) = a_h * E(t) if G(t) >= G_H
+            a_l * E(t) if G(t) < G_L
+            0 otherwise
+        where E(t) = |G(t) - G_ref|
+        """
+        E_t = abs(bgl - G_ref)
+        if bgl >= G_H:
+            return a_h * E_t
+        elif bgl < G_L:
+            return a_l * E_t
+        else:
+            return 0
+
+    
+    
     def step_and_record(self, observation, action, reward, done, **kwargs):
         """
         Takes an action in the environment, records the transition, and updates prev_state.
         """
         # Get the current state (self.prev_state is the state before the step)
         state = self.prev_state
-        
+
         bg = observation.CGM  # Current observation (e.g., blood glucose level)
         meal = kwargs.get('meal')  # unit: g/min
 
         reward = -(bg - self.target)**2
 
+        # Update the history lists
+        self.bg_history.pop(0)
+        self.bg_history.append(bg)
+        self.meal_history.pop(0)
+        self.meal_history.append(meal)
+
         # Construct state representation for the RL agent
-        next_state = torch.tensor([bg, meal], dtype=torch.float32).unsqueeze(0)  # Add batch dimension
-        
+        next_state = torch.tensor(self.bg_history + self.meal_history, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
+
         # Record the transition (state, action, reward, next_state)
         self.buffer.record((state, action, reward, next_state, done))
-        
+
         # Update the prev_state to next_state
         self.prev_state = next_state
-        
+
         # Return some info like done or reward for control
         self.train()
 
@@ -234,8 +333,6 @@ class RLPIDController(Controller):
         with torch.no_grad():
             target_actions = self.target_actor(next_state_batch)
             # Ensure no future reward is added for terminal states (done_batch=1 for terminal states)
-            print(f"Next state batch shape: {next_state_batch.shape}")
-            print(f"Target actions shape: {target_actions.shape}")
             target_q = reward_batch + self.gamma * self.target_critic(next_state_batch, target_actions) * (1 - done_batch)
 
         # Update critic
@@ -255,7 +352,6 @@ class RLPIDController(Controller):
         # Soft update of the target networks
         self.update_target_networks()
 
-
     def update_target_networks(self):
         """
         Soft updates the target networks using the parameter tau.
@@ -266,12 +362,16 @@ class RLPIDController(Controller):
         for target_param, param in zip(self.target_critic.parameters(), self.critic_model.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
 
-    def reset(self , obs , **kwargs):
+    def reset(self, obs, **kwargs):
         """
         Resets the PID controller's internal state.
         """
         bg = obs.CGM  # Current observation (e.g., blood glucose level)
         meal = kwargs.get('meal')  # unit: g/min
 
+        # Initialize history lists
+        self.bg_history = [bg] * self.k
+        self.meal_history = [meal] * self.k
+
         # Construct state representation for the RL agent
-        self.prev_state = torch.tensor([bg, meal], dtype=torch.float32).unsqueeze(0)
+        self.prev_state = torch.tensor(self.bg_history + self.meal_history, dtype=torch.float32).unsqueeze(0)
