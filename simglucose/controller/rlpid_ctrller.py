@@ -77,6 +77,7 @@ class Buffer:
 #         x = self.tanh(self.fc3(x)) * self.upper_bound
 #         return x
 
+
 class Actor(nn.Module):
     def __init__(self, statedim, actiondim, upper_bound):
         super(Actor, self).__init__()
@@ -240,12 +241,35 @@ class RLPIDController(Controller):
         # Return Action with basal as a scalar and delta_kp, delta_ki, delta_kd
         return Action(basal=basal, bolus=0), delta_kp, delta_ki, delta_kd
 
-    
     def reward_function0(bg):
         reward = -(bg - self.target)**2
         return reward
+
+
+    def computeReward(self):
+        cnt = 0
+        # Iterate through bg_hist from the end
+        for i in reversed(self.bg_hist):
+            # Check if the element satisfies the condition
+            if i < 70 or i > 130:
+                cnt += -1
+            else:
+                # If an element doesn't satisfy the condition, break the loop
+                break
+        return cnt
+
     
-    def reward_function1(G_t):
+    @staticmethod
+    def reward_function1(bgl, soft_limit_lower=80, hard_limit_lower=60, soft_limit_higher=140, hard_limit_higher=180, target=100):
+        if soft_limit_lower <= bgl <= soft_limit_higher:
+            return -(bgl - target) ** 2
+        elif hard_limit_lower <= bgl <= hard_limit_higher:
+            return -10 * (bgl - target) ** 2
+        else:
+            return -1000 * (bgl - target) ** 2
+
+
+    def reward_function2(G_t):
         """ 
         Gaussian reward function where:
         G_t: Instantaneous reading from the glucose sensor
@@ -256,20 +280,6 @@ class RLPIDController(Controller):
         a = 40
         reward = -1 + math.exp(-((G_t - G_X) ** 2) / (2 * a ** 2))
         return reward
-    
-    def reward_function2(bgl, soft_limit_lower=80, hard_limit_lower=60, soft_limit_higher=140, hard_limit_higher=180, target=100):
-        """
-        Reward function with two limits: soft limit range and hard limit range.
-        The soft limit range comes under the hard limit range.
-        If the BGL is under the soft limit range, penalize as -(bgl - target)**2.
-        Else, if out of the soft range but within hard limit, penalize as -1000 * (bgl - target)**2.
-        """
-        if soft_limit_lower <= bgl <= soft_limit_higher:
-            return -(bgl - target) ** 2
-        elif hard_limit_lower <= bgl <= hard_limit_higher:
-            return -100 * (bgl - target) ** 2
-        else:
-            return -1000 * (bgl - target) ** 2  # Hard penalty if outside the hard limit
 
     def reward_function3(bgl, G_ref=100, G_H=180, G_L=70, a_h=1.5, a_l=2.0):
         """
@@ -296,10 +306,13 @@ class RLPIDController(Controller):
         # Get the current state (self.prev_state is the state before the step)
         state = self.prev_state
 
-        bg = observation.CGM  # Current observation (e.g., blood glucose level)
+        bg = float(observation.CGM)  # Current observation (e.g., blood glucose level)
         meal = kwargs.get('meal')  # unit: g/min
 
-        reward = -(bg - self.target)**2
+        # reward = -(bg - self.target)**2
+
+        reward = self.reward_function1(bg)
+
 
         # Update the history lists
         self.bg_history.pop(0)

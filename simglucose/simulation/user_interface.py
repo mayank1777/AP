@@ -402,6 +402,7 @@ def simulate(
 
     df = pd.concat(results, keys=[s.env.patient.name for s in sim_instances])
     results, ri_per_hour, zone_stats, figs, axes = report(df, cgm_sensor, save_path)
+    print()
 
     return results
 
